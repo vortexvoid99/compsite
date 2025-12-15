@@ -2,10 +2,6 @@ import CompetitionCard from "@/components/CompetitionCard";
 import { Competition } from "../types/competition";
 import { useEffect, useState } from "react";
 
-/**
- * Competitions Page - Dynamic listing from API
- */
-
 export default function Competitions() {
   const [competitions, setCompetitions] = useState<Competition[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,7 +49,6 @@ export default function Competitions() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Page Header */}
       <section className="py-12 md:py-16 bg-muted/30">
         <div className="container">
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
@@ -65,7 +60,6 @@ export default function Competitions() {
         </div>
       </section>
 
-      {/* Grid */}
       <section className="py-16 md:py-24 flex-1">
         <div className="container grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {competitions.map((comp) => (
