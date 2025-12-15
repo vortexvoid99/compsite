@@ -13,6 +13,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const r2 = env.R2_BUCKET;
 
     if (request.method === 'POST') {
+        let image_reference = '';
         try {
             // 1. Parse the multipart form data
             const formData = await request.formData();
@@ -27,34 +28,38 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             const puzzle_answer = formData.get('puzzle_answer')?.toString() || null;
             const imageFile = formData.get('image_file') as File | null;
 
-            // Basic validation
-            if (!title || !description || !start_at || !end_at || !imageFile) {
-                return jsonResponse({ error: 'Missing required fields: title, description, start_at, end_at, and image_file.' }, 400);
+            // 2. Basic validation (Problem 5)
+            if (!title || !description || !start_at || !end_at) {
+                return jsonResponse({ error: 'Missing required fields: title, description, start_at, and end_at.' }, 400);
+            }
+            if (!imageFile || imageFile.size === 0) {
+                return jsonResponse({ error: 'Image file is required and cannot be empty.' }, 400);
             }
 
-            // 2. Prepare data
+            // 3. Prepare data
             const slug = slugify(title);
-            let image_reference = '';
             let puzzle_hashed_answer = null;
 
-            // 3. Handle Image Upload to R2
-            if (imageFile && imageFile.size > 0) {
-                const fileExtension = imageFile.name.split('.').pop();
-                const r2Key = `competition-images/${slug}-${Date.now()}.${fileExtension}`;
-                
-                await r2.put(r2Key, imageFile.stream());
-                image_reference = r2Key;
-            } else {
-                return jsonResponse({ error: 'Image file is required.' }, 400);
-            }
+            // 4. Handle Image Upload to R2 (Problem 4: Fix R2 upload logic)
+            const fileExtension = imageFile.name.split('.').pop();
+            const r2Key = `competition-images/${slug}-${Date.now()}.${fileExtension}`;
+            image_reference = r2Key; // Set reference early for cleanup on D1 failure
 
-            // 4. Handle Puzzle Hashing
+            // Use arrayBuffer() and pass the buffer to r2.put with httpMetadata
+            const imageBuffer = await imageFile.arrayBuffer();
+            
+            await r2.put(r2Key, imageBuffer, {
+                httpMetadata: {
+                    contentType: imageFile.type,
+                },
+            });
+
+            // 5. Handle Puzzle Hashing
             if (puzzle_question && puzzle_answer) {
-                // Note: Cloudflare Pages Functions environment provides the crypto API
                 puzzle_hashed_answer = await hashAnswer(puzzle_answer);
             }
 
-            // 5. Insert into D1
+            // 6. Insert into D1
             const stmt = db.prepare(`
                 INSERT INTO competitions (
                     slug, title, description, image_reference, start_at, end_at, 
@@ -77,12 +82,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             } else {
                 // If the insert failed, attempt to clean up the R2 object
                 await r2.delete(image_reference);
+                // Return 500 for database failure
                 return jsonResponse({ error: 'Failed to create competition in database', details: result.error }, 500);
             }
 
         } catch (error) {
             console.error('Admin POST error:', error);
-            return jsonResponse({ error: 'Internal Server Error', details: error.message }, 500);
+            // Attempt to clean up R2 object if it was uploaded but something else failed
+            if (image_reference) {
+                // Non-critical: Log the cleanup attempt but don't fail the response if it fails
+                r2.delete(image_reference).catch(e => console.error('Failed to clean up R2 object:', e));
+            }
+            // Return 500 for unexpected errors (Problem 1 & 5)
+            return jsonResponse({ error: 'Internal Server Error', details: error instanceof Error ? error.message : 'An unknown error occurred' }, 500);
         }
     }
 
@@ -93,7 +105,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             return jsonResponse(results);
         } catch (error) {
             console.error('Admin GET error:', error);
-            return jsonResponse({ error: 'Internal Server Error', details: error.message }, 500);
+            return jsonResponse({ error: 'Internal Server Error', details: error instanceof Error ? error.message : 'An unknown error occurred' }, 500);
         }
     }
 
