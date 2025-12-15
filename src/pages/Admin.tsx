@@ -37,10 +37,12 @@ const Admin: React.FC = () => {
         const formData = new FormData();
         formData.append('title', title);
         formData.append('description', description);
+        // The backend expects ISO strings for start_at and end_at, which the original code already does.
+        // We ensure the field names match the backend's expectation: 'image_file'
         formData.append('start_at', new Date(startAt).toISOString());
         formData.append('end_at', new Date(endAt).toISOString());
         formData.append('published', published ? 'true' : 'false');
-        formData.append('image_file', imageFile);
+        formData.append('image_file', imageFile); // Field name is correct
 
         if (puzzleQuestion && puzzleAnswer) {
             formData.append('puzzle_question', puzzleQuestion);
@@ -48,7 +50,6 @@ const Admin: React.FC = () => {
         }
 
         try {
-            // The API endpoint is relative to the root, which will be handled by Cloudflare Pages Functions
             const response = await fetch('/api/admin/competitions', {
                 method: 'POST',
                 body: formData,
@@ -60,7 +61,7 @@ const Admin: React.FC = () => {
                 // Optionally reset form fields here
             } else {
                 const errorData = await response.json();
-                toast.error(`Failed to create competition: ${errorData.error || 'Unknown error'}`);
+                toast.error(`Failed to create competition: ${errorData.details || errorData.error || 'Unknown error'}`);
             }
         } catch (error) {
             console.error('Submission error:', error);
