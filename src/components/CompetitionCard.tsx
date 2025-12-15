@@ -12,7 +12,7 @@ import { useLocation } from "wouter";
 interface CompetitionCardProps {
   slug: string;
   title: string;
-  image: string; // R2 key
+  image: string; // R2 key OR full URL
   endDate: string; // ISO 8601 timestamp
   ticketsRemaining: number;
   ticketsSold: number;
@@ -23,28 +23,37 @@ interface CompetitionCardProps {
 export default function CompetitionCard({
   slug,
   title,
-  image, // R2 key
-  endDate, // ISO 8601 timestamp
+  image,
+  endDate,
   ticketsRemaining,
   ticketsSold,
   totalTickets,
   prizeValue,
 }: CompetitionCardProps) {
   const [, navigate] = useLocation();
-  
-  // R2 image URL construction: Assumes R2 is bound to a public path like /r2-images
-  // This is a common pattern for Cloudflare Pages/Workers
-  const imageUrl = `/r2-images/${image}`;
 
-  // Convert ISO string to Date object for the countdown hook
-  const countdown = useCountdown(new Date(endDate));
-  const progressPercentage = (ticketsSold / totalTickets) * 100;
+  // If `image` is already a full URL, use it.
+  // Otherwise treat it as an R2 object key and serve via the query-based proxy:
+  // /r2-images?key=<R2_OBJECT_KEY>
+  const imageUrl =
+    image?.startsWith("http")
+      ? image
+      : image
+      ? `/r2-images?key=${encodeURIComponent(image)}`
+      : "";
+
+  // Guard against invalid dates to prevent NaN countdown
+  const end = new Date(endDate);
+  const hasValidEndDate = !isNaN(end.getTime());
+  const countdown = useCountdown(hasValidEndDate ? end : new Date(Date.now()));
+
+  const progressPercentage =
+    totalTickets > 0 ? (ticketsSold / totalTickets) * 100 : 0;
 
   // Format countdown display
   const getCountdownDisplay = () => {
-    if (countdown.isExpired) {
-      return "Ended";
-    }
+    if (!hasValidEndDate) return "No end date";
+    if (countdown.isExpired) return "Ended";
     if (countdown.days > 0) {
       return `${countdown.days} day${countdown.days !== 1 ? "s" : ""}`;
     }
@@ -56,6 +65,7 @@ export default function CompetitionCard({
 
   // Determine badge color based on time remaining
   const getBadgeColor = () => {
+    if (!hasValidEndDate) return "bg-muted";
     if (countdown.isExpired) return "bg-red-500";
     if (countdown.days === 0 && countdown.hours < 12) return "bg-orange-500";
     return "bg-primary";
@@ -69,14 +79,22 @@ export default function CompetitionCard({
           src={imageUrl}
           alt={title}
           className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+          loading="lazy"
+          onError={(e) => {
+            // Optional: hide broken image icon gracefully
+            (e.currentTarget as HTMLImageElement).style.display = "none";
+          }}
         />
+
         {/* Countdown Timer Badge */}
-        <div
-          className={`absolute top-4 left-4 ${getBadgeColor()} text-white px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1 shadow-md`}
-        >
-          <Clock className="w-4 h-4" />
-          {getCountdownDisplay()}
-        </div>
+        {hasValidEndDate && (
+          <div
+            className={`absolute top-4 left-4 ${getBadgeColor()} text-white px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1 shadow-md`}
+          >
+            <Clock className="w-4 h-4" />
+            {getCountdownDisplay()}
+          </div>
+        )}
       </div>
 
       {/* Card Content */}
@@ -89,7 +107,8 @@ export default function CompetitionCard({
         {/* Prize Value (if available) */}
         {prizeValue && (
           <div className="mb-4 text-sm text-muted-foreground">
-            Prize Value: <span className="text-primary font-semibold">{prizeValue}</span>
+            Prize Value:{" "}
+            <span className="text-primary font-semibold">{prizeValue}</span>
           </div>
         )}
 
@@ -109,14 +128,12 @@ export default function CompetitionCard({
           <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
             <div
               className="bg-primary h-full transition-all duration-300"
-              style={{ width: `${progressPercentage}%` }}
+              style={{ width: `${Math.max(0, Math.min(100, progressPercentage))}%` }}
             />
           </div>
 
           {/* Sold count */}
-          <div className="text-xs text-muted-foreground">
-            {ticketsSold} sold
-          </div>
+          <div className="text-xs text-muted-foreground">{ticketsSold} sold</div>
         </div>
 
         {/* Divider line - signature element */}
@@ -126,9 +143,11 @@ export default function CompetitionCard({
         <Button
           onClick={() => navigate(`/competition/${slug}`)}
           className="w-full bg-secondary hover:bg-orange-600 text-white font-semibold transition-colors duration-150"
-          disabled={countdown.isExpired}
+          disabled={hasValidEndDate ? countdown.isExpired : false}
         >
-          {countdown.isExpired ? "Competition Ended" : "Enter Now"}
+          {hasValidEndDate && countdown.isExpired
+            ? "Competition Ended"
+            : "Enter Now"}
         </Button>
       </div>
     </div>
