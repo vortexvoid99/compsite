@@ -17,8 +17,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
             // Order by end_at to show upcoming/active first
             const { results } = await db.prepare(`
                 SELECT 
-                    id, slug, title, description, image_reference, 
-                    start_at, end_at, puzzle_type, puzzle_question, 
+                    id, slug, title, description, image_reference AS image, 
+                    start_at, end_at AS endDate, puzzle_type, puzzle_question, 
                     published, created_at, updated_at
                 FROM competitions 
                 WHERE published = 1
